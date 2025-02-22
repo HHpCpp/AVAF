@@ -2,23 +2,27 @@ package blockchain
 
 import (
 	"fmt"
+
+	AA "github.com/HHpCpp/AVAF/accounts"
 )
 
 // Blockchain представляет собой цепочку блоков
 type Blockchain struct {
 	Chain    []Block
-	Accounts map[string]Account // Хранилище аккаунтов
+	Accounts map[string]AA.Account // Хранилище аккаунтов
 }
 
 // NewBlockchain создает новый блокчейн с genesis блоком
 func NewBlockchain() Blockchain {
 	genesisBlock := NewBlock(0, []Transaction{}, "")
-	accounts := make(map[string]Account)
+	accounts := make(map[string]AA.Account)
 	return Blockchain{
 		Chain:    []Block{genesisBlock},
 		Accounts: accounts,
 	}
 }
+
+// DJHDFShdsfhj
 
 // AddBlock добавляет новый блок в блокчейн
 func (bc *Blockchain) AddBlock(transactions []Transaction) {
@@ -69,7 +73,7 @@ func (bc *Blockchain) CreateAccount(address string, balance float64) {
 		fmt.Println("Account already exists:", address)
 		return
 	}
-	bc.Accounts[address] = NewAccount(address, balance)
+	bc.Accounts[address] = AA.NewAccount(address, balance)
 }
 
 // IsValid проверяет валидность блокчейна
