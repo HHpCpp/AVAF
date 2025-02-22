@@ -22,6 +22,11 @@ func NewBlockchain() Blockchain {
 	}
 }
 
+// CreateAccount создает новый аккаунт
+func (bc *Blockchain) CreateAccount(balance float64) (AA.Account, error) {
+	return bc.AccountManager.CreateAccount(balance)
+}
+
 // AddBlock добавляет новый блок в блокчейн
 func (bc *Blockchain) AddBlock(transactions []Transaction) {
 	// Проверяем транзакции перед добавлением
@@ -72,14 +77,6 @@ func (bc *Blockchain) ValidateTransaction(tx Transaction) bool {
 	}
 
 	return true
-}
-
-// CreateAccount создает новый аккаунт
-func (bc *Blockchain) CreateAccount(address string, balance float64) {
-	err := bc.AccountManager.CreateAccount(address, balance)
-	if err != nil {
-		fmt.Println("Error creating account:", err)
-	}
 }
 
 // IsValid проверяет валидность блокчейна

@@ -11,15 +11,17 @@ func main() {
 	bc := blockchain.NewBlockchain()
 
 	// Создаем новый аккаунт
-	bc.CreateAccount("address1", 100.0)
-	bc.CreateAccount("address2", 200.0)
+	account, err := bc.CreateAccount(100.0)
+	if err != nil {
+		fmt.Println("Error creating account:", err)
+		return
+	}
+
+	fmt.Printf("Created account: %+v\n", account)
 
 	// Получаем все аккаунты
-	accountManager := bc.AccountManager
-	allAccounts := accountManager.GetAllAccounts()
-
-	// Выводим все аккаунты
-	for address, account := range allAccounts {
-		fmt.Printf("Address: %s, Balance: %.2f\n", address, account.Balance)
+	allAccounts := bc.AccountManager.GetAllAccounts()
+	for address, acc := range allAccounts {
+		fmt.Printf("Address: %s, Balance: %.2f\n", address, acc.Balance)
 	}
 }

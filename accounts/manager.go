@@ -18,23 +18,38 @@ func NewAccountManager() *AccountManager {
 	}
 }
 
-// CreateAccount создает новый аккаунт и сохраняет его
-func (am *AccountManager) CreateAccount(address string, balance float64) error {
+// CreateAccount создает новый аккаунт с уникальным адресом
+func (am *AccountManager) CreateAccount(balance float64) (Account, error) {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
-	if _, exists := am.accounts[address]; exists {
-		return fmt.Errorf("account already exists: %s", address)
+	// Генерируем уникальный адрес
+	address, err := GenerateAddress()
+	if err != nil {
+		return Account{}, fmt.Errorf("failed to generate address: %w", err)
 	}
 
-	am.accounts[address] = NewAccount(address, balance)
-	return nil
+	// Проверяем, что адрес уникален
+	if _, exists := am.accounts[address]; exists {
+		return Account{}, fmt.Errorf("address collision: %s", address)
+	}
+
+	// Создаем аккаунт
+	account := NewAccount(address, balance)
+	am.accounts[address] = account
+
+	return account, nil
 }
 
 // GetAccount возвращает аккаунт по адресу
 func (am *AccountManager) GetAccount(address string) (Account, error) {
 	am.mu.RLock()
 	defer am.mu.RUnlock()
+
+	// Проверяем валидность адреса
+	if !ValidateAddress(address) {
+		return Account{}, fmt.Errorf("invalid address: %s", address)
+	}
 
 	account, exists := am.accounts[address]
 	if !exists {
