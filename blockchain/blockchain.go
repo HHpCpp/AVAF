@@ -27,6 +27,44 @@ func (bc *Blockchain) CreateAccount(balance float64) (AA.Account, error) {
 	return bc.AccountManager.CreateAccount(balance)
 }
 
+// CreateTransaction создает и обрабатывает новую транзакцию
+func (bc *Blockchain) CreateTransaction(sender, recipient string, amount float64) (*Transaction, error) {
+	// Создаем транзакцию
+	tx, err := NewTransaction(sender, recipient, amount)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create transaction: %w", err)
+	}
+
+	// Проверяем валидность транзакции
+	if err := tx.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid transaction: %w", err)
+	}
+
+	// Проверяем, что у отправителя достаточно средств
+	senderAccount, err := bc.AccountManager.GetAccount(sender)
+	if err != nil {
+		return nil, fmt.Errorf("sender account not found: %w", err)
+	}
+
+	if senderAccount.Balance < amount {
+		return nil, fmt.Errorf("insufficient balance: sender has %.2f, required %.2f", senderAccount.Balance, amount)
+	}
+
+	// Обновляем балансы
+	recipientAccount, err := bc.AccountManager.GetAccount(recipient)
+	if err != nil {
+		return nil, fmt.Errorf("recipient account not found: %w", err)
+	}
+
+	senderAccount.Balance -= amount
+	recipientAccount.Balance += amount
+
+	// Добавляем транзакцию в новый блок
+	bc.AddBlock([]Transaction{*tx})
+
+	return tx, nil
+}
+
 // AddBlock добавляет новый блок в блокчейн
 func (bc *Blockchain) AddBlock(transactions []Transaction) {
 	// Проверяем транзакции перед добавлением
@@ -35,27 +73,6 @@ func (bc *Blockchain) AddBlock(transactions []Transaction) {
 			fmt.Println("Invalid transaction:", tx)
 			return
 		}
-	}
-
-	// Обновляем балансы аккаунтов
-	for _, tx := range transactions {
-		sender, err := bc.AccountManager.GetAccount(tx.Sender)
-		if err != nil {
-			fmt.Println("Error getting sender account:", err)
-			return
-		}
-
-		recipient, err := bc.AccountManager.GetAccount(tx.Recipient)
-		if err != nil {
-			fmt.Println("Error getting recipient account:", err)
-			return
-		}
-
-		sender.Balance -= tx.Amount
-		recipient.Balance += tx.Amount
-
-		bc.AccountManager.CreateAccount(sender.Address, sender.Balance)
-		bc.AccountManager.CreateAccount(recipient.Address, recipient.Balance)
 	}
 
 	prevBlock := bc.Chain[len(bc.Chain)-1]
