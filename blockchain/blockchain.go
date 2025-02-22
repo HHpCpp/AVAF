@@ -8,21 +8,19 @@ import (
 
 // Blockchain представляет собой цепочку блоков
 type Blockchain struct {
-	Chain    []Block
-	Accounts map[string]AA.Account // Хранилище аккаунтов
+	Chain          []Block
+	AccountManager *AA.AccountManager // Используем AccountManager для управления аккаунтами
 }
 
 // NewBlockchain создает новый блокчейн с genesis блоком
 func NewBlockchain() Blockchain {
 	genesisBlock := NewBlock(0, []Transaction{}, "")
-	accounts := make(map[string]AA.Account)
+	accountManager := AA.NewAccountManager()
 	return Blockchain{
-		Chain:    []Block{genesisBlock},
-		Accounts: accounts,
+		Chain:          []Block{genesisBlock},
+		AccountManager: accountManager,
 	}
 }
-
-// DJHDFShdsfhj
 
 // AddBlock добавляет новый блок в блокчейн
 func (bc *Blockchain) AddBlock(transactions []Transaction) {
@@ -36,14 +34,23 @@ func (bc *Blockchain) AddBlock(transactions []Transaction) {
 
 	// Обновляем балансы аккаунтов
 	for _, tx := range transactions {
-		sender := bc.Accounts[tx.Sender]
-		recipient := bc.Accounts[tx.Recipient]
+		sender, err := bc.AccountManager.GetAccount(tx.Sender)
+		if err != nil {
+			fmt.Println("Error getting sender account:", err)
+			return
+		}
+
+		recipient, err := bc.AccountManager.GetAccount(tx.Recipient)
+		if err != nil {
+			fmt.Println("Error getting recipient account:", err)
+			return
+		}
 
 		sender.Balance -= tx.Amount
 		recipient.Balance += tx.Amount
 
-		bc.Accounts[tx.Sender] = sender
-		bc.Accounts[tx.Recipient] = recipient
+		bc.AccountManager.CreateAccount(sender.Address, sender.Balance)
+		bc.AccountManager.CreateAccount(recipient.Address, recipient.Balance)
 	}
 
 	prevBlock := bc.Chain[len(bc.Chain)-1]
@@ -53,8 +60,8 @@ func (bc *Blockchain) AddBlock(transactions []Transaction) {
 
 // ValidateTransaction проверяет, что транзакция корректна
 func (bc *Blockchain) ValidateTransaction(tx Transaction) bool {
-	sender, exists := bc.Accounts[tx.Sender]
-	if !exists {
+	sender, err := bc.AccountManager.GetAccount(tx.Sender)
+	if err != nil {
 		fmt.Println("Sender account does not exist:", tx.Sender)
 		return false
 	}
@@ -69,11 +76,10 @@ func (bc *Blockchain) ValidateTransaction(tx Transaction) bool {
 
 // CreateAccount создает новый аккаунт
 func (bc *Blockchain) CreateAccount(address string, balance float64) {
-	if _, exists := bc.Accounts[address]; exists {
-		fmt.Println("Account already exists:", address)
-		return
+	err := bc.AccountManager.CreateAccount(address, balance)
+	if err != nil {
+		fmt.Println("Error creating account:", err)
 	}
-	bc.Accounts[address] = AA.NewAccount(address, balance)
 }
 
 // IsValid проверяет валидность блокчейна
