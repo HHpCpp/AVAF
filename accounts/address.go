@@ -2,6 +2,7 @@ package accounts
 
 import (
 	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -13,6 +14,16 @@ const (
 	addressPrefix = "AVAFu" // Префикс адреса
 	addressLength = 42      // Длина адреса
 )
+
+// GeneratePrivateKey генерирует приватный ключ (256 символов в hex-формате)
+func GeneratePrivateKey() (string, error) {
+	bytes := make([]byte, 128) // 128 байт = 256 символов в hex
+	_, err := rand.Read(bytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate private key: %w", err)
+	}
+	return hex.EncodeToString(bytes), nil
+}
 
 // GenerateAddress генерирует уникальный адрес кошелька
 func GenerateAddress() (string, error) {

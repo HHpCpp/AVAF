@@ -14,12 +14,17 @@ type Blockchain struct {
 
 // NewBlockchain создает новый блокчейн с genesis блоком
 func NewBlockchain() Blockchain {
+	accountManager := AA.NewAccountManager("accounts.json") // Указываем имя файла для сохранения
 	genesisBlock := NewBlock(0, []Transaction{}, "")
-	accountManager := AA.NewAccountManager()
 	return Blockchain{
 		Chain:          []Block{genesisBlock},
 		AccountManager: accountManager,
 	}
+}
+
+// Close сохраняет данные перед завершением работы
+func (bc *Blockchain) Close() error {
+	return bc.AccountManager.Close()
 }
 
 // CreateAccount создает новый аккаунт
@@ -59,6 +64,10 @@ func (bc *Blockchain) CreateTransaction(sender, recipient string, amount float64
 	// Обновляем балансы
 	senderAccount.Balance -= amount
 	recipientAccount.Balance += amount
+
+	// Сохраняем обновленные аккаунты в AccountManager
+	bc.AccountManager.UpdateAccount(senderAccount)
+	bc.AccountManager.UpdateAccount(recipientAccount)
 
 	// Добавляем транзакцию в новый блок
 	bc.AddBlock([]Transaction{*tx})

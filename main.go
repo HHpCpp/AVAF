@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/HHpCpp/AVAF/blockchain"
 )
@@ -10,35 +13,50 @@ func main() {
 	// Создаем новый блокчейн
 	bc := blockchain.NewBlockchain()
 
-	// Создаем два аккаунта
-	account1, err := bc.CreateAccount(100.0)
+	// Обрабатываем сигналы завершения программы
+	setupCloseHandler(&bc)
+
+	// Создаем новый аккаунт
+	account, err := bc.CreateAccount(100.0)
 	if err != nil {
-		fmt.Println("Error creating account 1:", err)
+		fmt.Println("Error creating account:", err)
 		return
 	}
 
-	account2, err := bc.CreateAccount(50.0)
+	fmt.Printf("Created account:\nAddress: %s\nBalance: %.2f\nPrivate Key: %s\n",
+		account.Address, account.Balance, account.PrivateKey)
+
+	// Выполняем транзакцию (пример)
+	_, err = bc.CreateAccount(50.0)
 	if err != nil {
-		fmt.Println("Error creating account 2:", err)
+		fmt.Println("Error creating second account:", err)
 		return
 	}
 
-	fmt.Printf("Account 1: %s, Balance: %.2f\n", account1.Address, account1.Balance)
-	fmt.Printf("Account 2: %s, Balance: %.2f\n", account2.Address, account2.Balance)
-
-	// Выполняем транзакцию
-	tx, err := bc.CreateTransaction(account1.Address, account2.Address, 30.0)
-	if err != nil {
-		fmt.Println("Error creating transaction:", err)
-		return
+	// Выводим все аккаунты
+	allAccounts := bc.AccountManager.GetAllAccounts()
+	for address, acc := range allAccounts {
+		fmt.Printf("Account: %s, Balance: %.2f\n", address, acc.Balance)
 	}
 
-	fmt.Println("Transaction successful:", tx)
+	// Ждем завершения программы
+	select {}
+}
 
-	// Проверяем балансы после транзакции
-	updatedAccount1, _ := bc.AccountManager.GetAccount(account1.Address)
-	updatedAccount2, _ := bc.AccountManager.GetAccount(account2.Address)
+// setupCloseHandler настраивает обработчик сигналов для сохранения данных
+func setupCloseHandler(bc *blockchain.Blockchain) {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
-	fmt.Printf("Account 1: %s, Balance: %.2f\n", updatedAccount1.Address, updatedAccount1.Balance)
-	fmt.Printf("Account 2: %s, Balance: %.2f\n", updatedAccount2.Address, updatedAccount2.Balance)
+	go func() {
+		<-c
+		fmt.Println("\nSaving data before exit...")
+		err := bc.Close()
+		if err != nil {
+			fmt.Println("Error saving data:", err)
+		} else {
+			fmt.Println("Data saved successfully.")
+		}
+		os.Exit(0)
+	}()
 }
