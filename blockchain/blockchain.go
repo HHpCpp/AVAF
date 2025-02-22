@@ -50,12 +50,13 @@ func (bc *Blockchain) CreateTransaction(sender, recipient string, amount float64
 		return nil, fmt.Errorf("insufficient balance: sender has %.2f, required %.2f", senderAccount.Balance, amount)
 	}
 
-	// Обновляем балансы
+	// Получаем аккаунт получателя
 	recipientAccount, err := bc.AccountManager.GetAccount(recipient)
 	if err != nil {
 		return nil, fmt.Errorf("recipient account not found: %w", err)
 	}
 
+	// Обновляем балансы
 	senderAccount.Balance -= amount
 	recipientAccount.Balance += amount
 
