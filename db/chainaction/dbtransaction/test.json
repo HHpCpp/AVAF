@@ -1,0 +1,23 @@
+{
+  "address": "test",
+  "crypto": {
+    "cipher": "aes-128-cbc",
+    "ciphercode": "test",
+    "cipherparams": {
+      "iv": "test"
+    },
+    "kdf": "test",
+    "kdfparams": {
+      "dklen": 32,
+      "n": 262144,
+      "p": 1,
+      "r": 8,
+      "salt": "test"
+    },
+    "mac": "test"
+  },
+  "balances": {
+    "AVAF": "test"
+  },
+  "publicKey": "test"
+}
