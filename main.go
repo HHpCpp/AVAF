@@ -2,9 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/HHpCpp/AVAF/blockchain"
 )
@@ -13,50 +10,33 @@ func main() {
 	// Создаем новый блокчейн
 	bc := blockchain.NewBlockchain()
 
-	// Обрабатываем сигналы завершения программы
-	setupCloseHandler(&bc)
-
-	// Создаем новый аккаунт
-	account, err := bc.CreateAccount(100.0)
+	// Создаем аккаунт
+	address1, err := bc.CreateAccount("strong_password_1", 100.0)
 	if err != nil {
 		fmt.Println("Error creating account:", err)
 		return
 	}
+	fmt.Println("Created account 1:", address1)
 
-	fmt.Printf("Created account:\nAddress: %s\nBalance: %.2f\nPrivate Key: %s\n",
-		account.Address, account.Balance, account.PrivateKey)
-
-	// Выполняем транзакцию (пример)
-	_, err = bc.CreateAccount(50.0)
+	address2, err := bc.CreateAccount("strong_password_2", 200.0)
 	if err != nil {
-		fmt.Println("Error creating second account:", err)
+		fmt.Println("Error creating account:", err)
 		return
 	}
+	fmt.Println("Created account 2:", address2)
 
-	// Выводим все аккаунты
-	allAccounts := bc.AccountManager.GetAllAccounts()
-	for address, acc := range allAccounts {
-		fmt.Printf("Account: %s, Balance: %.2f\n", address, acc.Balance)
+	// Получаем баланс
+	balance1, err := bc.GetAccountBalance(address1, "strong_password_1")
+	if err != nil {
+		fmt.Println("Error getting balance:", err)
+		return
 	}
+	fmt.Println("Account 1 balance:", balance1)
 
-	// Ждем завершения программы
-	select {}
-}
-
-// setupCloseHandler настраивает обработчик сигналов для сохранения данных
-func setupCloseHandler(bc *blockchain.Blockchain) {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
-	go func() {
-		<-c
-		fmt.Println("\nSaving data before exit...")
-		err := bc.Close()
-		if err != nil {
-			fmt.Println("Error saving data:", err)
-		} else {
-			fmt.Println("Data saved successfully.")
-		}
-		os.Exit(0)
-	}()
+	balance2, err := bc.GetAccountBalance(address2, "strong_password_2")
+	if err != nil {
+		fmt.Println("Error getting balance:", err)
+		return
+	}
+	fmt.Println("Account 2 balance:", balance2)
 }

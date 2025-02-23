@@ -14,7 +14,8 @@ type Blockchain struct {
 
 // NewBlockchain создает новый блокчейн с genesis блоком
 func NewBlockchain() Blockchain {
-	accountManager := AA.NewAccountManager("accounts.json") // Указываем имя файла для сохранения
+	// Указываем директорию для хранения данных аккаунтов
+	accountManager := AA.NewAccountManager("db/accounts/data")
 	genesisBlock := NewBlock(0, []Transaction{}, "")
 	return Blockchain{
 		Chain:          []Block{genesisBlock},
@@ -24,50 +25,66 @@ func NewBlockchain() Blockchain {
 
 // Close сохраняет данные перед завершением работы
 func (bc *Blockchain) Close() error {
-	return bc.AccountManager.Close()
+	// В новой реализации AccountManager не требует явного сохранения,
+	// так как данные сохраняются сразу при создании аккаунтов.
+	return nil
 }
 
 // CreateAccount создает новый аккаунт
-func (bc *Blockchain) CreateAccount(balance float64) (AA.Account, error) {
-	return bc.AccountManager.CreateAccount(balance)
+func (bc *Blockchain) CreateAccount(password string, balance float64) (string, error) {
+	// Создаем аккаунт через AccountManager
+	address, err := bc.AccountManager.CreateAccount(password, balance)
+	if err != nil {
+		return "", fmt.Errorf("failed to create account: %w", err)
+	}
+	return address, nil
+}
+
+// GetAccountBalance возвращает баланс аккаунта
+func (bc *Blockchain) GetAccountBalance(address, password string) (map[string]float64, error) {
+	// Получаем баланс через AccountManager
+	balance, err := bc.AccountManager.GetAccount(address, password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get account balance: %w", err)
+	}
+	return balance, nil
 }
 
 // CreateTransaction создает и обрабатывает новую транзакцию
-func (bc *Blockchain) CreateTransaction(sender, recipient string, amount float64) (*Transaction, error) {
+func (bc *Blockchain) CreateTransaction(sender, recipient, password string, amount float64) (*Transaction, error) {
+	// Проверяем, что отправитель и получатель не совпадают
+	if sender == recipient {
+		return nil, fmt.Errorf("sender and recipient cannot be the same")
+	}
+
+	// Получаем баланс отправителя
+	senderBalance, err := bc.GetAccountBalance(sender, password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get sender balance: %w", err)
+	}
+
+	// Проверяем, что у отправителя достаточно средств
+	if senderBalance["AVAF"] < amount {
+		return nil, fmt.Errorf("insufficient balance: sender has %.2f, required %.2f", senderBalance["AVAF"], amount)
+	}
+
+	// Получаем баланс получателя
+	recipientBalance, err := bc.GetAccountBalance(recipient, password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get recipient balance: %w", err)
+	}
+
+	// Обновляем балансы
+	senderBalance["AVAF"] -= amount
+	recipientBalance["AVAF"] += amount
+
+	// TODO: Сохранить обновленные балансы в AccountManager
+
 	// Создаем транзакцию
 	tx, err := NewTransaction(sender, recipient, amount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create transaction: %w", err)
 	}
-
-	// Проверяем валидность транзакции
-	if err := tx.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid transaction: %w", err)
-	}
-
-	// Проверяем, что у отправителя достаточно средств
-	senderAccount, err := bc.AccountManager.GetAccount(sender)
-	if err != nil {
-		return nil, fmt.Errorf("sender account not found: %w", err)
-	}
-
-	if senderAccount.Balance < amount {
-		return nil, fmt.Errorf("insufficient balance: sender has %.2f, required %.2f", senderAccount.Balance, amount)
-	}
-
-	// Получаем аккаунт получателя
-	recipientAccount, err := bc.AccountManager.GetAccount(recipient)
-	if err != nil {
-		return nil, fmt.Errorf("recipient account not found: %w", err)
-	}
-
-	// Обновляем балансы
-	senderAccount.Balance -= amount
-	recipientAccount.Balance += amount
-
-	// Сохраняем обновленные аккаунты в AccountManager
-	bc.AccountManager.UpdateAccount(senderAccount)
-	bc.AccountManager.UpdateAccount(recipientAccount)
 
 	// Добавляем транзакцию в новый блок
 	bc.AddBlock([]Transaction{*tx})
@@ -92,14 +109,14 @@ func (bc *Blockchain) AddBlock(transactions []Transaction) {
 
 // ValidateTransaction проверяет, что транзакция корректна
 func (bc *Blockchain) ValidateTransaction(tx Transaction) bool {
-	sender, err := bc.AccountManager.GetAccount(tx.Sender)
-	if err != nil {
-		fmt.Println("Sender account does not exist:", tx.Sender)
+	// Валидация транзакции (базовая проверка)
+	if tx.Sender == "" || tx.Recipient == "" {
+		fmt.Println("Invalid transaction: sender or recipient is empty")
 		return false
 	}
 
-	if sender.Balance < tx.Amount {
-		fmt.Println("Insufficient balance:", tx.Sender)
+	if tx.Amount <= 0 {
+		fmt.Println("Invalid transaction: amount must be greater than 0")
 		return false
 	}
 

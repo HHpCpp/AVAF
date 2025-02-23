@@ -6,164 +6,137 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/HHpCpp/AVAF/crypto"
 )
 
-// AccountManager управляет аккаунтами
 type AccountManager struct {
-	accounts map[string]Account
-	mu       sync.RWMutex
-	filename string // Полный путь к файлу для сохранения данных
+	mu         sync.RWMutex
+	dataDir    string            // Директория для хранения данных аккаунтов
+	passwords  map[string]string // Маппинг адресов на пароли
+	cipherFile string            // Путь к файлу accountchiper.json
 }
 
-// NewAccountManager создает новый менеджер аккаунтов
-func NewAccountManager(filename string) *AccountManager {
-	// Создаем полный путь к файлу
-	fullPath := filepath.Join("accounts", "data", filename)
-
-	// Создаем директорию, если она не существует
-	err := os.MkdirAll(filepath.Dir(fullPath), 0755)
-	if err != nil {
-		panic(fmt.Errorf("failed to create data directory: %w", err))
-	}
-
-	am := &AccountManager{
-		accounts: make(map[string]Account),
-		filename: fullPath,
-	}
-	am.loadFromFile() // Загружаем данные при создании
-	return am
+type Wallet struct {
+	Address string             `json:"address"`
+	Crypto  crypto.CryptoJSON  `json:"crypto"`
+	Balance map[string]float64 `json:"balances"`
 }
 
-// SaveToFile сохраняет данные аккаунтов в файл
-func (am *AccountManager) SaveToFile() error {
-	am.mu.RLock()
-	defer am.mu.RUnlock()
+func NewAccountManager(dataDir string) *AccountManager {
+	cipherFile := filepath.Join(dataDir, "accountchiper.json")
+	passwords := make(map[string]string)
 
-	// Сериализуем данные в JSON
-	data, err := json.MarshalIndent(am.accounts, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal accounts: %w", err)
-	}
+	// Загружаем пароли из файла, если он существует
+	if _, err := os.Stat(cipherFile); err == nil {
+		data, err := os.ReadFile(cipherFile)
+		if err != nil {
+			panic(fmt.Errorf("failed to read cipher file: %w", err))
+		}
 
-	// Записываем данные в файл
-	err = os.WriteFile(am.filename, data, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to write to file: %w", err)
-	}
-
-	return nil
-}
-
-// loadFromFile загружает данные аккаунтов из файла
-func (am *AccountManager) loadFromFile() error {
-	am.mu.Lock()
-	defer am.mu.Unlock()
-
-	// Проверяем, существует ли файл
-	if _, err := os.Stat(am.filename); os.IsNotExist(err) {
-		return nil // Файл не существует, пропускаем загрузку
-	}
-
-	// Читаем данные из файла
-	data, err := os.ReadFile(am.filename)
-	if err != nil {
-		return fmt.Errorf("failed to read file: %w", err)
-	}
-
-	// Десериализуем данные
-	err = json.Unmarshal(data, &am.accounts)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal accounts: %w", err)
-	}
-
-	return nil
-}
-
-// Close сохраняет данные перед завершением работы
-func (am *AccountManager) Close() error {
-	return am.SaveToFile()
-}
-
-// CreateAccount создает новый аккаунт с уникальным адресом и приватным ключом
-func (am *AccountManager) CreateAccount(balance float64) (Account, error) {
-	am.mu.Lock()
-	defer am.mu.Unlock()
-
-	// Генерируем уникальный адрес
-	address, err := GenerateAddress()
-	if err != nil {
-		return Account{}, fmt.Errorf("failed to generate address: %w", err)
-	}
-
-	// Генерируем приватный ключ
-	privateKey, err := GeneratePrivateKey()
-	if err != nil {
-		return Account{}, fmt.Errorf("failed to generate private key: %w", err)
-	}
-
-	// Проверяем, что адрес уникален
-	if _, exists := am.accounts[address]; exists {
-		return Account{}, fmt.Errorf("address collision: %s", address)
-	}
-
-	// Создаем аккаунт
-	account := NewAccount(address, balance, privateKey)
-	am.accounts[address] = account
-
-	return account, nil
-}
-
-// GetAccountByPrivateKey возвращает аккаунт по приватному ключу
-func (am *AccountManager) GetAccountByPrivateKey(privateKey string) (Account, error) {
-	am.mu.RLock()
-	defer am.mu.RUnlock()
-
-	for _, account := range am.accounts {
-		if account.PrivateKey == privateKey {
-			return account, nil
+		if err := json.Unmarshal(data, &passwords); err != nil {
+			panic(fmt.Errorf("failed to unmarshal cipher file: %w", err))
 		}
 	}
 
-	return Account{}, fmt.Errorf("account not found for the given private key")
+	return &AccountManager{
+		dataDir:    dataDir,
+		passwords:  passwords,
+		cipherFile: cipherFile,
+	}
 }
 
-// UpdateAccount обновляет существующий аккаунт
-func (am *AccountManager) UpdateAccount(account Account) error {
+// savePasswords сохраняет пароли в файл accountchiper.json
+func (am *AccountManager) savePasswords() error {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
-	// Проверяем, что аккаунт существует
-	if _, exists := am.accounts[account.Address]; !exists {
-		return fmt.Errorf("account not found: %s", account.Address)
+	data, err := json.MarshalIndent(am.passwords, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal passwords: %w", err)
 	}
 
-	// Обновляем аккаунт
-	am.accounts[account.Address] = account
+	if err := os.WriteFile(am.cipherFile, data, 0600); err != nil {
+		return fmt.Errorf("failed to write cipher file: %w", err)
+	}
+
 	return nil
 }
 
-// GetAccount возвращает аккаунт по адресу
-func (am *AccountManager) GetAccount(address string) (Account, error) {
-	am.mu.RLock()
-	defer am.mu.RUnlock()
+// CreateAccount создает новый аккаунт и сохраняет пароль
+func (am *AccountManager) CreateAccount(password string, balance float64) (string, error) {
+	am.mu.Lock()
+	defer am.mu.Unlock()
 
-	// Проверяем валидность адреса
-	if !ValidateAddress(address) {
-		return Account{}, fmt.Errorf("invalid address: %s", address)
+	privateKey, err := GeneratePrivateKey()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate private key: %w", err)
 	}
 
-	account, exists := am.accounts[address]
-	if !exists {
-		return Account{}, fmt.Errorf("account not found: %s", address)
+	address, err := GenerateAddress()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate address: %w", err)
 	}
 
-	return account, nil
+	cryptoJSON, err := crypto.EncryptData([]byte(privateKey), password)
+	if err != nil {
+		return "", fmt.Errorf("encryption failed: %w", err)
+	}
+
+	wallet := Wallet{
+		Address: address,
+		Crypto:  *cryptoJSON,
+		Balance: map[string]float64{"AVAF": balance},
+	}
+
+	filePath := filepath.Join(am.dataDir, address+".json")
+	data, err := json.MarshalIndent(wallet, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshal error: %w", err)
+	}
+
+	if err := os.WriteFile(filePath, data, 0600); err != nil {
+		return "", fmt.Errorf("file write error: %w", err)
+	}
+
+	// Сохраняем пароль
+	am.passwords[address] = password
+	if err := am.savePasswords(); err != nil {
+		return "", fmt.Errorf("failed to save passwords: %w", err)
+	}
+
+	return address, nil
 }
 
-// GetAllAccounts возвращает все аккаунты
-func (am *AccountManager) GetAllAccounts() map[string]Account {
+// GetAccountBalance возвращает баланс аккаунта
+func (am *AccountManager) GetAccountBalance(address, password string) (map[string]float64, error) {
 	am.mu.RLock()
 	defer am.mu.RUnlock()
 
-	return am.accounts
+	// Проверяем, что пароль совпадает
+	storedPassword, exists := am.passwords[address]
+	if !exists {
+		return nil, fmt.Errorf("account not found")
+	}
+	if storedPassword != password {
+		return nil, fmt.Errorf("incorrect password")
+	}
+
+	filePath := filepath.Join(am.dataDir, address+".json")
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("file read error: %w", err)
+	}
+
+	var wallet Wallet
+	if err := json.Unmarshal(data, &wallet); err != nil {
+		return nil, fmt.Errorf("unmarshal error: %w", err)
+	}
+
+	_, err = crypto.DecryptData(wallet.Crypto, password)
+	if err != nil {
+		return nil, fmt.Errorf("decryption failed: %w", err)
+	}
+
+	return wallet.Balance, nil
 }
