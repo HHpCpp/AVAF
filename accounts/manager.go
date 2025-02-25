@@ -7,10 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
-	"os"
-	"path/filepath"
 	"sync"
 
+	"github.com/HHpCpp/AVAF/avafdb"
 	"github.com/HHpCpp/AVAF/crypto"
 )
 
@@ -20,48 +19,57 @@ var (
 )
 
 type AccountManager struct {
-	mu      sync.RWMutex
-	dataDir string
+	mu sync.RWMutex
+	db *avafdb.LevelDB
 }
 
 type Wallet struct {
 	Address   string            `json:"address"`
-	Crypto    crypto.CryptoJSON `json:"crypto"`    // Зашифрованные данные (приватный ключ)
-	Balance   map[string]string `json:"balances"`  // Баланс в hex-коде (открытый)
-	PublicKey string            `json:"publicKey"` // Публичный ключ в hex-формате
+	Crypto    crypto.CryptoJSON `json:"crypto"`
+	Balance   map[string]string `json:"balances"`
+	PublicKey string            `json:"publicKey"`
 }
 
-func NewAccountManager(dataDir string) *AccountManager {
-	return &AccountManager{
-		dataDir: dataDir,
+func NewAccountManager(db *avafdb.LevelDB) *AccountManager {
+	return &AccountManager{db: db}
+}
+
+func (am *AccountManager) SaveAccount(wallet Wallet) error {
+	data, err := json.Marshal(wallet)
+	if err != nil {
+		return fmt.Errorf("failed to marshal wallet: %w", err)
 	}
+	return am.db.Save("account_"+wallet.Address, data)
 }
 
-// GetPrivateKey возвращает приватный ключ, расшифрованный с использованием пароля
+func (am *AccountManager) LoadAccount(address string) (Wallet, error) {
+	data, err := am.db.Load("account_" + address)
+	if err != nil {
+		return Wallet{}, fmt.Errorf("failed to load account: %w", err)
+	}
+
+	var wallet Wallet
+	if err := json.Unmarshal(data, &wallet); err != nil {
+		return Wallet{}, fmt.Errorf("failed to unmarshal wallet: %w", err)
+	}
+
+	return wallet, nil
+}
+
 func (am *AccountManager) GetPrivateKey(address, password string) (*ecdsa.PrivateKey, error) {
 	am.mu.RLock()
 	defer am.mu.RUnlock()
 
-	// Читаем файл кошелька
-	filePath := filepath.Join(am.dataDir, address+".json")
-	data, err := os.ReadFile(filePath)
+	wallet, err := am.LoadAccount(address)
 	if err != nil {
-		return nil, fmt.Errorf("file read error: %w", err)
+		return nil, err
 	}
 
-	// Декодируем JSON
-	var wallet Wallet
-	if err := json.Unmarshal(data, &wallet); err != nil {
-		return nil, fmt.Errorf("unmarshal error: %w", err)
-	}
-
-	// Расшифровываем приватный ключ
 	privateKeyBytes, err := crypto.DecryptData(wallet.Crypto, password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt private key: %w", err)
 	}
 
-	// Преобразуем приватный ключ из hex в структуру ecdsa.PrivateKey
 	privateKeyHex := string(privateKeyBytes)
 	privateKeyBytes, err = hex.DecodeString(privateKeyHex)
 	if err != nil {
@@ -76,31 +84,27 @@ func (am *AccountManager) GetPrivateKey(address, password string) (*ecdsa.Privat
 	return privateKey, nil
 }
 
-// CreateAccount создает новый аккаунт
 func (am *AccountManager) CreateAccount(password string, balance float64) (string, *ecdsa.PrivateKey, error) {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
-	// Генерация пары ключей и адреса
 	privateKey, address, err := GenerateKeyPair()
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to generate key pair: %w", err)
 	}
 
-	// Преобразуем приватный ключ в hex
 	privateKeyHex := hex.EncodeToString(privateKey.D.Bytes())
 
-	// Шифруем приватный ключ
 	cryptoJSON, err := crypto.EncryptData([]byte(privateKeyHex), password)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to encrypt private key: %w", err)
 	}
 
-	// Преобразуем баланс в hex-код
 	balanceHex := hex.EncodeToString([]byte(fmt.Sprintf("%.18f", balance)))
-
-	// Сохраняем публичный ключ в hex-формате
-	publicKeyHex := hex.EncodeToString(append(privateKey.PublicKey.X.Bytes(), privateKey.PublicKey.Y.Bytes()...))
+	publicKeyHex := hex.EncodeToString(append(
+		privateKey.PublicKey.X.Bytes(),
+		privateKey.PublicKey.Y.Bytes()...,
+	))
 
 	wallet := Wallet{
 		Address:   address,
@@ -109,18 +113,10 @@ func (am *AccountManager) CreateAccount(password string, balance float64) (strin
 		PublicKey: publicKeyHex,
 	}
 
-	// Сохраняем кошелек в файл
-	filePath := filepath.Join(am.dataDir, address+".json")
-	data, err := json.MarshalIndent(wallet, "", "  ")
-	if err != nil {
-		return "", nil, fmt.Errorf("marshal error: %w", err)
+	if err := am.SaveAccount(wallet); err != nil {
+		return "", nil, fmt.Errorf("failed to save account: %w", err)
 	}
 
-	if err := os.WriteFile(filePath, data, 0600); err != nil {
-		return "", nil, fmt.Errorf("file write error: %w", err)
-	}
-
-	// Сохраняем публичный ключ в кэш
 	cacheMutex.Lock()
 	publicKeyCache[address] = &privateKey.PublicKey
 	cacheMutex.Unlock()
@@ -128,32 +124,24 @@ func (am *AccountManager) CreateAccount(password string, balance float64) (strin
 	return address, privateKey, nil
 }
 
-// GetBalance возвращает баланс без необходимости ввода пароля
 func (am *AccountManager) GetBalance(address string) (map[string]float64, error) {
 	am.mu.RLock()
 	defer am.mu.RUnlock()
 
-	filePath := filepath.Join(am.dataDir, address+".json")
-	data, err := os.ReadFile(filePath)
+	wallet, err := am.LoadAccount(address)
 	if err != nil {
-		return nil, fmt.Errorf("file read error: %w", err)
+		return nil, err
 	}
 
-	var wallet Wallet
-	if err := json.Unmarshal(data, &wallet); err != nil {
-		return nil, fmt.Errorf("unmarshal error: %w", err)
-	}
-
-	// Декодируем баланс из hex-кода
 	balances := make(map[string]float64)
 	for currency, balanceHex := range wallet.Balance {
 		balanceBytes, err := hex.DecodeString(balanceHex)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode balance: %w", err)
 		}
+
 		var balance float64
-		_, err = fmt.Sscanf(string(balanceBytes), "%f", &balance)
-		if err != nil {
+		if _, err = fmt.Sscanf(string(balanceBytes), "%f", &balance); err != nil {
 			return nil, fmt.Errorf("failed to parse balance: %w", err)
 		}
 		balances[currency] = balance
@@ -162,49 +150,50 @@ func (am *AccountManager) GetBalance(address string) (map[string]float64, error)
 	return balances, nil
 }
 
-// UpdateBalance обновляет баланс аккаунта
 func (am *AccountManager) UpdateBalance(address string, balances map[string]float64) error {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
-	filePath := filepath.Join(am.dataDir, address+".json")
-	data, err := os.ReadFile(filePath)
+	wallet, err := am.LoadAccount(address)
 	if err != nil {
-		return fmt.Errorf("file read error: %w", err)
+		return err
 	}
 
-	var wallet Wallet
-	if err := json.Unmarshal(data, &wallet); err != nil {
-		return fmt.Errorf("unmarshal error: %w", err)
-	}
-
-	// Обновляем баланс
 	wallet.Balance = make(map[string]string)
 	for currency, balance := range balances {
 		balanceHex := hex.EncodeToString([]byte(fmt.Sprintf("%.18f", balance)))
 		wallet.Balance[currency] = balanceHex
 	}
 
-	// Сохраняем обновленный кошелек
-	data, err = json.MarshalIndent(wallet, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal error: %w", err)
-	}
-
-	if err := os.WriteFile(filePath, data, 0600); err != nil {
-		return fmt.Errorf("file write error: %w", err)
-	}
-
-	return nil
+	return am.SaveAccount(wallet)
 }
 
-// GetPublicKey возвращает публичный ключ из кэша
 func (am *AccountManager) GetPublicKey(address string) (*ecdsa.PublicKey, error) {
 	cacheMutex.RLock()
-	defer cacheMutex.RUnlock()
-
 	if pubKey, ok := publicKeyCache[address]; ok {
+		cacheMutex.RUnlock()
 		return pubKey, nil
 	}
-	return nil, fmt.Errorf("public key not found for address: %s", address)
+	cacheMutex.RUnlock()
+
+	wallet, err := am.LoadAccount(address)
+	if err != nil {
+		return nil, err
+	}
+
+	pubKeyBytes, err := hex.DecodeString(wallet.PublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode public key: %w", err)
+	}
+
+	pubKey := new(ecdsa.PublicKey)
+	pubKey.Curve = elliptic.P256()
+	pubKey.X = new(big.Int).SetBytes(pubKeyBytes[:32])
+	pubKey.Y = new(big.Int).SetBytes(pubKeyBytes[32:])
+
+	cacheMutex.Lock()
+	publicKeyCache[address] = pubKey
+	cacheMutex.Unlock()
+
+	return pubKey, nil
 }

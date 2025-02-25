@@ -8,19 +8,24 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"time"
 )
 
-// Transaction представляет собой транзакцию между двумя аккаунтами
 type Transaction struct {
-	Sender    string  `json:"sender"`
-	Recipient string  `json:"recipient"`
-	Amount    float64 `json:"amount"`
-	Currency  string  `json:"currency"`
-	Signature string  `json:"signature"`
+	Hash       string  `json:"hash"`
+	Type       string  `json:"type"`      // transfer/smartcontract
+	Sender     string  `json:"from"`      // Адрес отправителя
+	Recipient  string  `json:"to"`        // Адрес получателя
+	ValueType  string  `json:"valueType"` // AVAF
+	Value      float64 `json:"value"`     // Количество
+	Afuel      float64 `json:"afuel"`     // Единицы вычислительной работы
+	AfuelPrice float64 `json:"afuelPrice"`
+	Data       string  `json:"data"` // Сообщение
+	Signature  string  `json:"signature"`
+	Timestamp  string  `json:"timestamp"`
 }
 
-// NewTransaction создает новую транзакцию
-func NewTransaction(sender, recipient string, amount float64) (*Transaction, error) {
+func NewTransaction(sender, recipient string, amount float64, data string) (*Transaction, error) {
 	if sender == recipient {
 		return nil, errors.New("sender and recipient cannot be the same")
 	}
@@ -29,35 +34,41 @@ func NewTransaction(sender, recipient string, amount float64) (*Transaction, err
 		return nil, errors.New("amount must be greater than 0")
 	}
 
-	return &Transaction{
-		Sender:    sender,
-		Recipient: recipient,
-		Amount:    amount,
-		Currency:  "AVAF",
-	}, nil
+	// Стандартные значения комиссии
+	afuel := 1000.0
+	afuelPrice := 0.0001
+
+	tx := &Transaction{
+		Type:       "transfer",
+		Sender:     sender,
+		Recipient:  recipient,
+		ValueType:  "AVAF",
+		Value:      amount,
+		Afuel:      afuel,
+		AfuelPrice: afuelPrice,
+		Data:       data,
+		Timestamp:  time.Now().UTC().Format(time.RFC3339), // Добавляем текущее время
+	}
+
+	// Генерируем хеш транзакции
+	hash := tx.Hashdo()
+	tx.Hash = hex.EncodeToString(hash[:])
+	return tx, nil
 }
 
-// Sign подписывает транзакцию с использованием приватного ключа
 func (t *Transaction) Sign(privateKey *ecdsa.PrivateKey) error {
-	// Хешируем данные транзакции
-	hash := t.Hash()
-
-	// Подписываем хеш
+	hash := t.Hashdo()
 	r, s, err := ecdsa.Sign(rand.Reader, privateKey, hash[:])
 	if err != nil {
 		return fmt.Errorf("failed to sign transaction: %w", err)
 	}
 
-	// Кодируем подпись в hex
 	signature := append(r.Bytes(), s.Bytes()...)
 	t.Signature = hex.EncodeToString(signature)
-
 	return nil
 }
 
-// Verify проверяет подпись транзакции
 func (t *Transaction) Verify(publicKey *ecdsa.PublicKey) (bool, error) {
-	// Декодируем подпись из hex
 	signature, err := hex.DecodeString(t.Signature)
 	if err != nil {
 		return false, fmt.Errorf("failed to decode signature: %w", err)
@@ -67,19 +78,25 @@ func (t *Transaction) Verify(publicKey *ecdsa.PublicKey) (bool, error) {
 		return false, errors.New("invalid signature length")
 	}
 
-	// Разделяем подпись на r и s
 	r := new(big.Int).SetBytes(signature[:32])
 	s := new(big.Int).SetBytes(signature[32:])
+	hash := t.Hashdo()
 
-	// Хешируем данные транзакции
-	hash := t.Hash()
-
-	// Проверяем подпись
 	return ecdsa.Verify(publicKey, hash[:], r, s), nil
 }
 
-// Hash возвращает хеш транзакции
-func (t *Transaction) Hash() [32]byte {
-	data := fmt.Sprintf("%s-%s-%.18f-%s", t.Sender, t.Recipient, t.Amount, t.Currency)
+func (t *Transaction) Hashdo() [32]byte {
+	data := fmt.Sprintf(
+		"%s-%s-%s-%s-%.18f-%.18f-%.18f-%s-%s",
+		t.Type,
+		t.Sender,
+		t.Recipient,
+		t.ValueType,
+		t.Value,
+		t.Afuel,
+		t.AfuelPrice,
+		t.Data,
+		t.Timestamp,
+	)
 	return sha256.Sum256([]byte(data))
 }

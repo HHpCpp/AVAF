@@ -9,18 +9,17 @@ import (
 
 // Block представляет собой блок в блокчейне
 type Block struct {
-	Index        int
-	Timestamp    string
-	Transactions []Transaction // Список транзакций в блоке
-	PrevHash     string
-	Hash         string
+	Index        int           `json:"index"`
+	Timestamp    string        `json:"timestamp"`
+	Transactions []Transaction `json:"transactions"` // Список транзакций в блоке
+	PrevHash     string        `json:"prevHash"`
+	Hash         string        `json:"hash"`
 }
 
-// NewBlock создает новый блок
 func NewBlock(index int, transactions []Transaction, prevHash string) Block {
 	block := Block{
 		Index:        index,
-		Timestamp:    time.Now().String(),
+		Timestamp:    time.Now().Format(time.RFC3339),
 		Transactions: transactions,
 		PrevHash:     prevHash,
 	}
@@ -28,7 +27,6 @@ func NewBlock(index int, transactions []Transaction, prevHash string) Block {
 	return block
 }
 
-// CalculateHash вычисляет хеш блока
 func (b *Block) CalculateHash() string {
 	record := fmt.Sprintf("%d%s%v%s", b.Index, b.Timestamp, b.Transactions, b.PrevHash)
 	h := sha256.New()
