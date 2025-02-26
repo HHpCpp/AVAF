@@ -25,7 +25,7 @@ type Transaction struct {
 	Timestamp  string  `json:"timestamp"`
 }
 
-func NewTransaction(sender, recipient string, amount float64, data string) (*Transaction, error) {
+func Ntr(sender, recipient string, amount float64, data string) (*Transaction, error) {
 	if sender == recipient {
 		return nil, errors.New("sender and recipient cannot be the same")
 	}

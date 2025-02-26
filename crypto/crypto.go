@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -36,6 +37,20 @@ type CryptoJSON struct {
 	KDF          string       `json:"kdf"`
 	KDFParams    KDFParams    `json:"kdfparams"`
 	MAC          string       `json:"mac"`
+}
+
+func PubkeyToAddress(pubKey ecdsa.PublicKey) string {
+	// Конкатенируем X и Y координаты публичного ключа
+	pubBytes := append(pubKey.X.Bytes(), pubKey.Y.Bytes()...)
+
+	// Хешируем публичный ключ с помощью SHA-256
+	hash := sha256.Sum256(pubBytes)
+
+	// Берем последние 20 байт хеша (как в Ethereum)
+	addressBytes := hash[len(hash)-20:]
+
+	// Преобразуем байты в hex-строку
+	return "AVAFu" + hex.EncodeToString(addressBytes)
 }
 
 // EncryptData шифрует данные с использованием пароля

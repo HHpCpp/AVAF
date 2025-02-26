@@ -7,9 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 
-	"github.com/HHpCpp/AVAF/avafdb"
+	"github.com/HHpCpp/AVAF/adb"
 	"github.com/HHpCpp/AVAF/crypto"
 )
 
@@ -20,17 +21,17 @@ var (
 
 type AccountManager struct {
 	mu sync.RWMutex
-	db *avafdb.LevelDB
+	db *adb.LevelDB
 }
 
 type Wallet struct {
-	Address   string            `json:"address"`
-	Crypto    crypto.CryptoJSON `json:"crypto"`
-	Balance   map[string]string `json:"balances"`
-	PublicKey string            `json:"publicKey"`
+	Address   string             `json:"address"`
+	Crypto    crypto.CryptoJSON  `json:"crypto"`
+	Balance   map[string]float64 `json:"balances"` // Изменено на float64
+	PublicKey string             `json:"publicKey"`
 }
 
-func NewAccountManager(db *avafdb.LevelDB) *AccountManager {
+func NewAccountManager(db *adb.LevelDB) *AccountManager {
 	return &AccountManager{db: db}
 }
 
@@ -39,7 +40,10 @@ func (am *AccountManager) SaveAccount(wallet Wallet) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal wallet: %w", err)
 	}
-	return am.db.Save("account_"+wallet.Address, data)
+
+	key := "account_" + wallet.Address
+	fmt.Printf("Saving account with key: %s\n", key) // Отладочный вывод
+	return am.db.Save(key, data)
 }
 
 func (am *AccountManager) LoadAccount(address string) (Wallet, error) {
@@ -100,7 +104,6 @@ func (am *AccountManager) CreateAccount(password string, balance float64) (strin
 		return "", nil, fmt.Errorf("failed to encrypt private key: %w", err)
 	}
 
-	balanceHex := hex.EncodeToString([]byte(fmt.Sprintf("%.18f", balance)))
 	publicKeyHex := hex.EncodeToString(append(
 		privateKey.PublicKey.X.Bytes(),
 		privateKey.PublicKey.Y.Bytes()...,
@@ -109,7 +112,7 @@ func (am *AccountManager) CreateAccount(password string, balance float64) (strin
 	wallet := Wallet{
 		Address:   address,
 		Crypto:    *cryptoJSON,
-		Balance:   map[string]string{"AVAF": balanceHex},
+		Balance:   map[string]float64{"AVAF": balance},
 		PublicKey: publicKeyHex,
 	}
 
@@ -123,7 +126,33 @@ func (am *AccountManager) CreateAccount(password string, balance float64) (strin
 
 	return address, privateKey, nil
 }
+func (am *AccountManager) GetAllAccounts() ([]string, error) {
+	var Addresses []string
+	// Создаем итератор для LevelDB
+	iter := am.db.NewIterator()
+	defer iter.Release()
 
+	// Проходим по всем ключам
+	for iter.Next() {
+		key := string(iter.Key())
+		value := iter.Value()
+
+		// Проверяем, что ключ начинается с "account_"
+		if strings.HasPrefix(key, "account_") {
+			var account Account
+			if err := json.Unmarshal(value, &account); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal account: %w", err)
+			}
+			Addresses = append(Addresses, account.Address)
+		}
+	}
+
+	if err := iter.Error(); err != nil {
+		return nil, fmt.Errorf("iterator error: %w", err)
+	}
+
+	return Addresses, nil
+}
 func (am *AccountManager) GetBalance(address string) (map[string]float64, error) {
 	am.mu.RLock()
 	defer am.mu.RUnlock()
@@ -133,21 +162,7 @@ func (am *AccountManager) GetBalance(address string) (map[string]float64, error)
 		return nil, err
 	}
 
-	balances := make(map[string]float64)
-	for currency, balanceHex := range wallet.Balance {
-		balanceBytes, err := hex.DecodeString(balanceHex)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode balance: %w", err)
-		}
-
-		var balance float64
-		if _, err = fmt.Sscanf(string(balanceBytes), "%f", &balance); err != nil {
-			return nil, fmt.Errorf("failed to parse balance: %w", err)
-		}
-		balances[currency] = balance
-	}
-
-	return balances, nil
+	return wallet.Balance, nil // Возвращаем баланс напрямую
 }
 
 func (am *AccountManager) UpdateBalance(address string, balances map[string]float64) error {
@@ -159,10 +174,9 @@ func (am *AccountManager) UpdateBalance(address string, balances map[string]floa
 		return err
 	}
 
-	wallet.Balance = make(map[string]string)
+	// Обновляем баланс для каждой валюты
 	for currency, balance := range balances {
-		balanceHex := hex.EncodeToString([]byte(fmt.Sprintf("%.18f", balance)))
-		wallet.Balance[currency] = balanceHex
+		wallet.Balance[currency] = balance // Просто обновляем значение
 	}
 
 	return am.SaveAccount(wallet)
